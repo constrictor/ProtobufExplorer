@@ -18,6 +18,7 @@
 
 #include "MessagePicker.h"
 
+#include <QCoreApplication>
 #include <QHash>
 #include <QKeyEvent>
 #include <QLineEdit>
