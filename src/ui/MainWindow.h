@@ -28,6 +28,7 @@ QT_END_NAMESPACE
 
 namespace protoexplorer {
 
+struct Decl;
 class SchemaTab;
 
 class MainWindow : public QMainWindow
@@ -39,6 +40,9 @@ public:
 
     // Open a file or a folder in a tab of its own, or go to the tab it is already in.
     void openPath(const QString &path);
+    // Open schemas, and over each the JSON files that come after it: over the message of that
+    // name, or over the likeliest. Returns what is wrong with the list, if anything is.
+    QString openAll(const QStringList &paths, const QString &message = QString());
 
     QTabWidget *tabs() const { return m_tabs; }
 
@@ -47,6 +51,7 @@ private:
     QWidget *makeWelcome();
     void chooseFiles();
     void chooseFolder();
+    void chooseJson(SchemaTab &tab, const Decl *message);
     void closeTab(int index);
     SchemaTab *currentTab() const;
     void updateState();
@@ -57,6 +62,8 @@ private:
     QStackedWidget *m_pages = nullptr;
     QAction *m_openFile = nullptr;
     QAction *m_openFolder = nullptr;
+    QAction *m_openJson = nullptr;
+    QAction *m_pasteJson = nullptr;
     QAction *m_close = nullptr;
     QAction *m_find = nullptr;
     QAction *m_findNext = nullptr;

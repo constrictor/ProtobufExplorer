@@ -82,7 +82,17 @@ private:
     void resolve(Decl &decl)
     {
         if (!decl.typeName.isEmpty())
-            decl.type = lookUp(decl);
+            decl.type = lookUp(decl, decl.typeName);
+        if (FieldInfo *info = decl.field.get()) {
+            if (decl.type && decl.type->kind == DeclKind::Message && !info->repeated
+                && info->mapKey.isEmpty()) {
+                info->tracksPresence = true;
+            }
+        }
+        if (MethodInfo *info = decl.method.get()) {
+            info->requestType = lookUpMessage(decl, info->request);
+            info->responseType = lookUpMessage(decl, info->response);
+        }
         for (const auto &member : decl.members)
             resolve(*member);
         for (const auto &inner : decl.nested)
@@ -99,23 +109,29 @@ private:
     }
 
     // Every full name the reference could stand for, innermost scope first.
-    static QStringList candidates(const Decl &decl)
+    static QStringList candidates(const Decl &decl, const QString &reference)
     {
-        if (decl.typeName.startsWith(u'.'))
-            return {decl.typeName.sliced(1)};
+        if (reference.startsWith(u'.'))
+            return {reference.sliced(1)};
         QStringList result;
         QString scope = scopeOf(decl);
         while (!scope.isEmpty()) {
-            result << scope + u'.' + decl.typeName;
+            result << scope + u'.' + reference;
             scope.truncate(std::max<qsizetype>(0, scope.lastIndexOf(u'.')));
         }
-        result << decl.typeName;
+        result << reference;
         return result;
     }
 
-    const Decl *lookUp(const Decl &decl) const
+    const Decl *lookUpMessage(const Decl &decl, const QString &reference) const
     {
-        const QStringList names = candidates(decl);
+        const Decl *type = lookUp(decl, reference);
+        return type && type->kind == DeclKind::Message ? type : nullptr;
+    }
+
+    const Decl *lookUp(const Decl &decl, const QString &reference) const
+    {
+        const QStringList names = candidates(decl, reference);
 
         // What the file can properly see goes first, whatever the scope. Were the scope to
         // go first, `common.Money` in package acme.v1 would mean a stray acme.common.Money

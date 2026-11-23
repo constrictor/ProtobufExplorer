@@ -37,6 +37,9 @@ class FindBar : public QWidget
 public:
     explicit FindBar(QWidget *parent = nullptr);
 
+    // What the box says when there is nothing in it.
+    void setPrompt(const QString &text);
+
     QString pattern() const;
     QString status() const;
     bool isFailed() const { return m_failed; }

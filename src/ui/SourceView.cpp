@@ -19,10 +19,10 @@
 #include "SourceView.h"
 
 #include "ProtoHighlighter.h"
+#include "WhereLabel.h"
 
 #include <QEvent>
 #include <QFontDatabase>
-#include <QLabel>
 #include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QVBoxLayout>
@@ -54,14 +54,8 @@ SourceView::Pane SourceView::makePane(int number)
 {
     Pane pane;
     pane.box = new QWidget(this);
-    pane.header = new QLabel(pane.box);
+    pane.header = new WhereLabel(pane.box);
     pane.header->setObjectName(QStringLiteral("sourceHeader%1").arg(number));
-    pane.header->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    pane.header->setTextFormat(Qt::PlainText);
-    pane.header->setContentsMargins(6, 4, 6, 4);
-    // Not to let a long path set the width of the window.
-    pane.header->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-    pane.header->installEventFilter(this);
     pane.text = new QPlainTextEdit(pane.box);
     pane.text->setObjectName(QStringLiteral("sourceText%1").arg(number));
     pane.text->setReadOnly(true);
@@ -93,9 +87,7 @@ void SourceView::display(const std::vector<const Decl *> &parts)
 
 void SourceView::clear()
 {
-    m_first.where.clear();
-    m_first.header->clear();
-    m_first.header->setToolTip(QString());
+    m_first.header->setWhere(QString());
     m_first.text->clear();
     m_second.text->clear();
     m_second.box->setVisible(false);
@@ -108,27 +100,8 @@ void SourceView::fill(Pane &pane, const Decl &decl)
     const QString lines = snippet.firstLine == snippet.lastLine
         ? QString::number(snippet.firstLine)
         : QStringLiteral("%1–%2").arg(snippet.firstLine).arg(snippet.lastLine);
-    pane.where = QStringLiteral("%1 : %2").arg(decl.file->displayPath, lines);
-    pane.header->setToolTip(pane.where);
-    elideHeader(pane);
+    pane.header->setWhere(QStringLiteral("%1 : %2").arg(decl.file->displayPath, lines));
     pane.text->setPlainText(snippet.text);
-}
-
-void SourceView::elideHeader(const Pane &pane)
-{
-    pane.header->setText(pane.header->fontMetrics().elidedText(
-        pane.where, Qt::ElideLeft, pane.header->contentsRect().width()));
-}
-
-bool SourceView::eventFilter(QObject *watched, QEvent *event)
-{
-    if (event->type() == QEvent::Resize) {
-        for (const Pane *pane : {&m_first, &m_second}) {
-            if (watched == pane->header)
-                elideHeader(*pane);
-        }
-    }
-    return QWidget::eventFilter(watched, event);
 }
 
 void SourceView::fitFirst(bool alone)

@@ -74,6 +74,16 @@ const Decl *SchemaTree::typeOf(const Decl &decl)
     return decl.kind == DeclKind::Field ? decl.type : nullptr;
 }
 
+const Decl *SchemaTree::messageAt(const Node &node)
+{
+    for (const Node *at = &node; at; at = at->parent) {
+        const Decl *type = at->decl->kind == DeclKind::Extend ? at->decl->type : typeOf(*at->decl);
+        if (type && type->kind == DeclKind::Message)
+            return type;
+    }
+    return nullptr;
+}
+
 const std::vector<std::unique_ptr<Decl>> &SchemaTree::membersOf(const Node &node)
 {
     static const std::vector<std::unique_ptr<Decl>> none;
@@ -159,14 +169,13 @@ std::vector<int> SchemaTree::pathTo(const Node &node)
     return rows;
 }
 
-std::vector<const Decl *> SchemaTree::sourceParts(const Node &node)
+std::vector<const Decl *> SchemaTree::sourceParts(const Decl &decl)
 {
-    std::vector<const Decl *> parts{node.decl};
-    if (node.decl->kind == DeclKind::Field && node.decl->type) {
-        const Decl *type = node.decl->type;
+    std::vector<const Decl *> parts{&decl};
+    if (decl.kind == DeclKind::Field && decl.type) {
         // A group is a field and a type written as one.
-        if (type->file != node.decl->file || type->span != node.decl->span)
-            parts.push_back(type);
+        if (decl.type->file != decl.file || decl.type->span != decl.span)
+            parts.push_back(decl.type);
     }
     return parts;
 }

@@ -78,7 +78,7 @@ class TestSchemaTree : public QObject
     static QStringList parts(const Node *node)
     {
         QStringList result;
-        for (const Decl *decl : SchemaTree::sourceParts(*node))
+        for (const Decl *decl : SchemaTree::sourceParts(*node->decl))
             result << decl->file->text.snippet(decl->span).text;
         return result;
     }

@@ -65,11 +65,13 @@ public:
     // The rows that lead to a node from the top. Compares in the order of the tree.
     static std::vector<int> pathTo(const Node &node);
 
-    // What to show for a node: the declaration itself, then the one its type refers to.
-    static std::vector<const Decl *> sourceParts(const Node &node);
+    // What to show for a declaration: itself, then the one its type refers to.
+    static std::vector<const Decl *> sourceParts(const Decl &decl);
 
     // The message or enum a node stands for: itself, or the type of a field.
     static const Decl *typeOf(const Decl &decl);
+    // The message a node stands for or is in, or null.
+    static const Decl *messageAt(const Node &node);
 
 private:
     static const std::vector<std::unique_ptr<Decl>> &membersOf(const Node &node);

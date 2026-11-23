@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include "SchemaIndex.h"
 #include "SchemaModel.h"
 
 #include <QFutureWatcher>
@@ -30,16 +31,19 @@ QT_BEGIN_NAMESPACE
 class QLabel;
 class QListWidget;
 class QStackedWidget;
+class QTabWidget;
 class QToolButton;
 QT_END_NAMESPACE
 
 namespace protoexplorer {
 
 class FindBar;
+class JsonView;
 class SchemaTreeView;
 class SourceView;
 
-// One opened file or folder: its trees, and the source of whatever is selected in them.
+// One opened file or folder: its trees, and the source of whatever is selected in them. Any
+// JSON laid over its messages goes into views of its own beside that.
 class SchemaTab : public QWidget
 {
     Q_OBJECT
@@ -54,11 +58,40 @@ public:
     void activateFind();
     void find(bool forward);
 
+    // There is a message for JSON to be laid over.
+    bool takesJson() const;
+    // The message that is selected, or null if none is.
+    const Decl *jsonTarget() const;
+    // Lay a JSON file over a message, or over the likeliest if there is none. One given by
+    // name may be asked for before the schema is loaded.
+    void openJson(const QString &path, const Decl *message);
+    void openJson(const QString &path, const QString &message);
+    // The same with what is in the clipboard.
+    void pasteJson(const Decl *message);
+    JsonView *currentJson() const;
+    // Close the one that is showing, if one is.
+    bool closeCurrentJson();
+
 signals:
     void loaded();
+    // The reader is to say which file.
+    void jsonWanted(const protoexplorer::Decl *message);
 
 private:
+    struct PendingJson
+    {
+        QString path;
+        QString message;
+    };
+
     QWidget *makeContents();
+    JsonView *addJson(const Decl *message, const QString &name, const QString &path, const QString &text);
+    void closeView(int index);
+    void showMenu(const QPoint &at);
+    std::shared_ptr<const SchemaIndex> schemaIndex();
+    // Of these messages, or of all of them if there are none.
+    const Decl *likeliest(const QString &json, const std::vector<const Decl *> &among);
+    void openJson(const QString &path, const std::vector<const Decl *> &among, QString note);
     void finishLoading();
     void showNotes();
     void showSource(const QModelIndex &index);
@@ -67,13 +100,18 @@ private:
 
     QString m_path;
     QFutureWatcher<std::shared_ptr<const Schema>> m_watcher;
+    std::shared_ptr<const Schema> m_schema;
+    std::shared_ptr<const SchemaIndex> m_index; // made when first needed
     SchemaModel *m_model = nullptr;
+    std::vector<PendingJson> m_pendingJson;
+    int m_pasted = 0;
 
     // What the pattern last looked for matches, in the order of the tree.
     QString m_pattern;
     std::vector<SchemaTree::Node *> m_matches;
 
     QStackedWidget *m_pages = nullptr;
+    QTabWidget *m_views = nullptr; // the schema first, then the JSON
     QLabel *m_loading = nullptr;
     FindBar *m_findBar = nullptr;
     SchemaTreeView *m_tree = nullptr;

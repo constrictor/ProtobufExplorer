@@ -26,7 +26,9 @@
 #include <QFileInfo>
 #include <QLabel>
 #include <QMenuBar>
+#include <QPointer>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -67,13 +69,26 @@ void MainWindow::makeActions()
     m_openFolder = add(file, tr("Open &Folder…"), QKeySequence(tr("Ctrl+Shift+O")),
                        [this] { chooseFolder(); });
     file->addSeparator();
-    m_close = add(file, tr("&Close Tab"), QKeySequence(tr("Ctrl+W")),
-                  [this] { closeTab(m_tabs->currentIndex()); });
+    m_openJson = add(file, tr("Open &JSON…"), QKeySequence(tr("Ctrl+J")), [this] {
+        if (SchemaTab *tab = currentTab())
+            chooseJson(*tab, tab->jsonTarget());
+    });
+    m_pasteJson = add(file, tr("&Paste JSON"), QKeySequence(tr("Ctrl+Shift+V")), [this] {
+        if (SchemaTab *tab = currentTab())
+            tab->pasteJson(tab->jsonTarget());
+    });
+    file->addSeparator();
+    // What is open the innermost goes first.
+    m_close = add(file, tr("&Close Tab"), QKeySequence(tr("Ctrl+W")), [this] {
+        SchemaTab *tab = currentTab();
+        if (tab && !tab->closeCurrentJson())
+            closeTab(m_tabs->currentIndex());
+    });
     file->addSeparator();
     add(file, tr("&Quit"), QKeySequence::Quit, [this] { close(); });
 
     QMenu *edit = menuBar()->addMenu(tr("&Edit"));
-    m_find = add(edit, tr("&Find Message…"), QKeySequence::Find, [this] {
+    m_find = add(edit, tr("&Find…"), QKeySequence::Find, [this] {
         if (SchemaTab *tab = currentTab())
             tab->activateFind();
     });
@@ -131,6 +146,35 @@ void MainWindow::chooseFolder()
         openPath(path);
 }
 
+void MainWindow::chooseJson(SchemaTab &tab, const Decl *message)
+{
+    const QPointer<SchemaTab> still(&tab);
+    const QString path = QFileDialog::getOpenFileName(
+        this, message ? tr("Open JSON as %1").arg(message->name) : tr("Open JSON"), startFolder(),
+        tr("JSON (*.json *.jsonl *.ndjson);;All files (*)"));
+    if (path.isEmpty() || !still)
+        return;
+    m_lastFolder = QFileInfo(path).absolutePath();
+    tab.openJson(path, message);
+}
+
+QString MainWindow::openAll(const QStringList &paths, const QString &message)
+{
+    static const QRegularExpression json(QStringLiteral("\\.(json|jsonl|ndjson)\\z"),
+                                         QRegularExpression::CaseInsensitiveOption);
+    bool any = false;
+    for (const QString &path : paths) {
+        if (!json.match(path).hasMatch() || QFileInfo(path).isDir())
+            openPath(path);
+        else if (!any)
+            return tr("%1 is JSON, and needs a schema before it.").arg(path);
+        else
+            currentTab()->openJson(path, message);
+        any = true;
+    }
+    return {};
+}
+
 void MainWindow::openPath(const QString &path)
 {
     const QFileInfo info(path);
@@ -149,7 +193,11 @@ void MainWindow::openPath(const QString &path)
     if (title.isEmpty())
         title = key;
     title.replace(u'&', QStringLiteral("&&")); // not a mnemonic
-    const int index = m_tabs->addTab(new SchemaTab(key), title);
+    auto *tab = new SchemaTab(key);
+    connect(tab, &SchemaTab::loaded, this, &MainWindow::updateState);
+    connect(tab, &SchemaTab::jsonWanted, this,
+            [this, tab](const Decl *message) { chooseJson(*tab, message); });
+    const int index = m_tabs->addTab(tab, title);
     m_tabs->setTabToolTip(index, QDir::toNativeSeparators(key));
     m_tabs->setCurrentIndex(index);
     updateState();
@@ -175,6 +223,8 @@ void MainWindow::updateState()
     const SchemaTab *tab = currentTab();
     for (QAction *action : {m_close, m_find, m_findNext, m_findPrevious})
         action->setEnabled(tab);
+    for (QAction *action : {m_openJson, m_pasteJson})
+        action->setEnabled(tab && tab->takesJson());
     m_pages->setCurrentIndex(tab ? 1 : 0);
     setWindowTitle(tab ? tr("%1 — Protobuf Explorer").arg(QDir::toNativeSeparators(tab->path()))
                        : tr("Protobuf Explorer"));

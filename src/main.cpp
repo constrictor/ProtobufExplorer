@@ -20,6 +20,7 @@
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QDebug>
 
 int main(int argc, char *argv[])
 {
@@ -31,15 +32,24 @@ int main(int argc, char *argv[])
     QCommandLineParser parser;
     parser.addHelpOption();
     parser.addVersionOption();
-    parser.addPositionalArgument(QStringLiteral("path"),
-                                 QApplication::translate("main", "A schema file or a folder of them."),
-                                 QStringLiteral("[path...]"));
+    parser.addPositionalArgument(
+        QStringLiteral("path"),
+        QApplication::translate("main", "A schema file or a folder of them, or a JSON file to lay "
+                                        "over the schema before it."),
+        QStringLiteral("[path...]"));
+    const QCommandLineOption message(
+        QStringLiteral("message"),
+        QApplication::translate("main", "The message that the JSON is of. Without it, the likeliest."),
+        QStringLiteral("name"));
+    parser.addOption(message);
     parser.process(app);
 
     protoexplorer::MainWindow window;
-    const QStringList paths = parser.positionalArguments();
-    for (const QString &path : paths)
-        window.openPath(path);
+    const QString problem = window.openAll(parser.positionalArguments(), parser.value(message));
+    if (!problem.isEmpty()) {
+        qCritical().noquote() << problem;
+        return 1;
+    }
     window.show();
     return QApplication::exec();
 }

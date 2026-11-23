@@ -32,8 +32,22 @@ public:
     // Bring an item into view, opening whatever it is inside, and make it the current one.
     void reveal(const QModelIndex &index);
 
+    // Take files that have one of these endings when they are dropped on a row.
+    void acceptFiles(const QStringList &endings);
+
+signals:
+    void filesDropped(const QStringList &paths, const QModelIndex &on);
+
 protected:
     void keyPressEvent(QKeyEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+
+private:
+    QStringList filesIn(const QMimeData &data) const;
+
+    QStringList m_endings;
 };
 
 } // namespace protoexplorer

@@ -34,6 +34,10 @@ qreal contrastRatio(const QColor &a, const QColor &b);
 
 QColor errorColor(const QPalette &palette);
 QColor mutedColor(const QPalette &palette);
+// For rows that are there for completeness, while still to be read.
+QColor dimColor(const QPalette &palette);
+// Behind text that something is pointing at.
+QColor markColor(const QPalette &palette);
 
 enum class SyntaxRole : quint8 { Comment, String, Number, Keyword, Type };
 

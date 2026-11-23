@@ -129,6 +129,42 @@ private slots:
         QCOMPARE(typeOf(*schema, "M.t"), QStringLiteral("(unresolved)"));
         QCOMPARE(typeOf(*schema, "M.self"), QStringLiteral("M"));
     }
+
+    void methodsFindTheirMessages()
+    {
+        TestFiles files;
+        files.proto("a.proto", "package p; import \"b.proto\"; enum Kind { Z = 0; }\n"
+                               "message In { message Deep {} }\n"
+                               "service S { rpc A(In) returns (q.Out); rpc B(.p.In.Deep) returns (Kind); rpc C(No) returns (In); }")
+            .proto("b.proto", "package q; message Out {}");
+        const auto schema = files.load();
+        const auto types = [&](const char *name) {
+            const Decl *method = findDecl(*schema, QString::fromLatin1(name));
+            const auto text = [](const Decl *type) { return type ? type->fullName : QStringLiteral("-"); };
+            return text(method->method->requestType) + u' ' + text(method->method->responseType);
+        };
+        QCOMPARE(types("p.S.A"), QStringLiteral("p.In q.Out"));
+        QCOMPARE(types("p.S.B"), QStringLiteral("p.In.Deep -")); // an enum is no message
+        QCOMPARE(types("p.S.C"), QStringLiteral("- p.In"));
+        QVERIFY(!findDecl(*schema, QStringLiteral("p.S.A"))->type); // nor does it count as use
+        QVERIFY(rootNames(*schema).contains(QStringLiteral("p.In")));
+    }
+
+    void messageFieldsTrackPresence()
+    {
+        TestFiles files;
+        files.proto("a.proto", "message M { In a = 1; E b = 2; repeated In c = 3; map<string, In> d = 4; No e = 5; }\n"
+                               "message In {} enum E { Z = 0; }");
+        const auto schema = files.load();
+        const auto tracks = [&](const char *name) {
+            return findDecl(*schema, QString::fromLatin1(name))->field->tracksPresence;
+        };
+        QVERIFY(tracks("M.a"));
+        QVERIFY(!tracks("M.b"));
+        QVERIFY(!tracks("M.c"));
+        QVERIFY(!tracks("M.d"));
+        QVERIFY(!tracks("M.e"));
+    }
 };
 
 QTEST_GUILESS_MAIN(TestTypeResolver)

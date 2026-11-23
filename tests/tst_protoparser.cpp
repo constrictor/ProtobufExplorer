@@ -303,6 +303,143 @@ private slots:
         for (const auto &d : file->decls)
             sourceOf(d.get());
     }
+
+    void presence_data()
+    {
+        QTest::addColumn<QByteArray>("head");
+        QTest::addColumn<QByteArray>("field");
+        QTest::addColumn<bool>("tracks");
+        const auto row = [](const char *head, const char *field, bool tracks) {
+            QTest::addRow("%s %s", head, field) << QByteArray(head) << QByteArray(field) << tracks;
+        };
+        const char *proto2 = "syntax = \"proto2\";";
+        const char *proto3 = "syntax = \"proto3\";";
+        const char *edition = "edition = \"2023\";";
+        const char *implicit = "edition = \"2023\"; option features.field_presence = IMPLICIT;";
+        row("", "optional int32 x = 1;", true);
+        row(proto2, "optional int32 x = 1;", true);
+        row(proto2, "required int32 x = 1;", true);
+        row(proto2, "repeated int32 x = 1;", false);
+        row(proto2, "map<int32, int32> x = 1;", false);
+        row(proto3, "int32 x = 1;", false);
+        row(proto3, "optional int32 x = 1;", true);
+        row(proto3, "repeated int32 x = 1;", false);
+        row(proto3, "oneof o { int32 x = 1; }", true);
+        row(edition, "int32 x = 1;", true);
+        row(edition, "int32 x = 1 [features.field_presence = IMPLICIT];", false);
+        row(edition, "int32 x = 1 [features.field_presence = LEGACY_REQUIRED];", true);
+        row(edition, "int32 x = 1 [features = { field_presence: IMPLICIT }];", false);
+        row(edition, "int32 x = 1 [features = { enum_type: OPEN field_presence : IMPLICIT }];", false);
+        row(edition, "int32 x = 1 [features = { enum_type: OPEN }];", true);
+        row(edition, "int32 x = 1 [(features).field_presence = IMPLICIT];", true);
+        row(edition, "repeated int32 x = 1;", false);
+        row(implicit, "int32 x = 1;", false);
+        row(implicit, "int32 x = 1 [features.field_presence = EXPLICIT];", true);
+        row(implicit, "oneof o { int32 x = 1; }", true);
+        row("edition = \"2023\"; option features = { field_presence: IMPLICIT };", "int32 x = 1;", false);
+    }
+    void presence()
+    {
+        QFETCH(QByteArray, head);
+        QFETCH(QByteArray, field);
+        QFETCH(bool, tracks);
+        const auto file = parseProto(QStringLiteral("a.proto"), head + "\nmessage A { " + field + " }");
+        QVERIFY(file->notes.empty());
+        const Decl *x = file->decls.at(0)->members.at(0).get();
+        if (x->kind == DeclKind::Oneof)
+            x = x->members.at(0).get();
+        QVERIFY(x->field);
+        QCOMPARE(x->field->tracksPresence, tracks);
+        QCOMPARE(x->field->required, field.contains("required") || field.contains("REQUIRED"));
+        QCOMPARE(x->field->repeated, field.contains("repeated"));
+        QCOMPARE(x->field->mapKey, field.contains("map") ? QStringLiteral("int32") : QString());
+    }
+
+    void extensionsTrackPresence()
+    {
+        const auto file = parseProto(QStringLiteral("a.proto"),
+            "edition = \"2023\"; package p; option features.field_presence = IMPLICIT;\n"
+            "extend A { int32 x = 100; }\nmessage In { extend A { repeated int32 y = 101; } }");
+        const Decl *x = find(find(file->decls, QStringLiteral("A"))->members, QStringLiteral("x"));
+        QVERIFY(x->field->tracksPresence);
+        QCOMPARE(x->field->jsonName, QStringLiteral("[p.x]"));
+        const Decl *in = find(file->decls, QStringLiteral("In"));
+        QCOMPARE(in->nested.at(0)->members.at(0)->field->jsonName, QStringLiteral("[p.In.y]"));
+    }
+
+    void fieldDetails()
+    {
+        const auto file = parseProto(QStringLiteral("a.proto"),
+            "syntax = \"proto2\";\nmessage A {\n"
+            "  optional int32 foo_bar_2x = 1;\n"
+            "  optional string s = 2 [default = \"a\\n\\\"b\", json_name = \"chosen\"];\n"
+            "  optional bytes b = 3 [default = \"\\001\\xff\"];\n"
+            "  optional double d = 4 [default = -inf];\n"
+            "  optional E e = 5 [default = TWO];\n"
+            "  map<string, E> m = 6;\n"
+            "  map<uint64, bytes> n = 7;\n"
+            "  repeated group Grp = 8 { optional int32 x = 1; }\n"
+            "  optional bool empty = 9 [default = false];\n"
+            "}\nenum E { ONE = 1; TWO = 2; }");
+        QVERIFY(file->notes.empty());
+        const Decl *a = find(file->decls, QStringLiteral("A"));
+        const auto info = [a](const char *name) -> const FieldInfo & {
+            return *find(a->members, QString::fromLatin1(name))->field;
+        };
+        QCOMPARE(info("foo_bar_2x").jsonName, QStringLiteral("fooBar2x"));
+        QCOMPARE(info("foo_bar_2x").scalar, QStringLiteral("int32"));
+        QVERIFY(!info("foo_bar_2x").hasDefault);
+        QCOMPARE(info("s").jsonName, QStringLiteral("chosen"));
+        QCOMPARE(info("s").defaultValue, QByteArray("a\n\"b"));
+        QCOMPARE(info("b").defaultValue, QByteArray("\x01\xff"));
+        QCOMPARE(info("d").defaultValue, QByteArray("-inf"));
+        QCOMPARE(info("e").defaultValue, QByteArray("TWO"));
+        QCOMPARE(info("e").scalar, QString()); // that its type is not read as a scalar one
+        QCOMPARE(info("m").mapKey, QStringLiteral("string"));
+        QCOMPARE(info("m").scalar, QString());
+        QCOMPARE(info("n").mapKey, QStringLiteral("uint64"));
+        QCOMPARE(info("n").scalar, QStringLiteral("bytes"));
+        QCOMPARE(info("grp").scalar, QString());
+        QVERIFY(info("grp").repeated);
+        QVERIFY(info("empty").hasDefault);
+        QVERIFY(!a->field);
+        QVERIFY(!a->method);
+    }
+
+    void closedEnums_data()
+    {
+        QTest::addColumn<QByteArray>("head");
+        QTest::addColumn<QByteArray>("inside");
+        QTest::addColumn<bool>("closed");
+        QTest::newRow("unstated") << QByteArray() << QByteArray() << true;
+        QTest::newRow("proto2") << QByteArray("syntax = \"proto2\";") << QByteArray() << true;
+        QTest::newRow("proto3") << QByteArray("syntax = \"proto3\";") << QByteArray() << false;
+        QTest::newRow("edition") << QByteArray("edition = \"2023\";") << QByteArray() << false;
+        QTest::newRow("file") << QByteArray("edition = \"2023\"; option features.enum_type = CLOSED;") << QByteArray() << true;
+        QTest::newRow("enum") << QByteArray("edition = \"2023\";") << QByteArray("option features.enum_type = CLOSED;") << true;
+        QTest::newRow("enum over file") << QByteArray("edition = \"2023\"; option features.enum_type = CLOSED;")
+                                        << QByteArray("option features.enum_type = OPEN;") << false;
+    }
+    void closedEnums()
+    {
+        QFETCH(QByteArray, head);
+        QFETCH(QByteArray, inside);
+        QFETCH(bool, closed);
+        const auto file = parseProto(QStringLiteral("a.proto"), head + "\nenum E { " + inside + " A = 0; }\nmessage M { enum F { " + inside + " B = 0; } }");
+        QCOMPARE(find(file->decls, QStringLiteral("E"))->closed, closed);
+        QCOMPARE(find(file->decls, QStringLiteral("M"))->nested.at(0)->closed, closed);
+    }
+
+    void methodTypes()
+    {
+        const auto file = parseProto(QStringLiteral("a.proto"),
+            "syntax = \"proto3\"; service S { rpc Do(stream .p.In) returns (Out); }");
+        const Decl *method = file->decls.at(0)->members.at(0).get();
+        QVERIFY(method->method);
+        QCOMPARE(method->method->request, QStringLiteral(".p.In"));
+        QCOMPARE(method->method->response, QStringLiteral("Out"));
+        QVERIFY(!method->field);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestProtoParser)

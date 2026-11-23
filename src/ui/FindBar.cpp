@@ -36,7 +36,6 @@ FindBar::FindBar(QWidget *parent)
     , m_next(new QToolButton(this))
 {
     m_edit->setObjectName(QStringLiteral("findEdit"));
-    m_edit->setPlaceholderText(tr("Find message…"));
     m_edit->setClearButtonEnabled(true);
     m_edit->installEventFilter(this);
     m_status->setObjectName(QStringLiteral("findStatus"));
@@ -60,6 +59,11 @@ FindBar::FindBar(QWidget *parent)
     connect(m_edit, &QLineEdit::textChanged, this, [this] { emit findRequested(true, true); });
     connect(m_previous, &QToolButton::clicked, this, [this] { emit findRequested(false, false); });
     connect(m_next, &QToolButton::clicked, this, [this] { emit findRequested(true, false); });
+}
+
+void FindBar::setPrompt(const QString &text)
+{
+    m_edit->setPlaceholderText(text);
 }
 
 QString FindBar::pattern() const

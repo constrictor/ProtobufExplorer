@@ -16,11 +16,14 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "JsonView.h"
 #include "MainWindow.h"
 #include "SchemaTab.h"
 #include "TestFiles.h"
 
 #include <QAction>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QMenuBar>
 #include <QSignalSpy>
 #include <QTabBar>
@@ -138,6 +141,100 @@ private slots:
         auto *tab = static_cast<SchemaTab *>(window.tabs()->currentWidget());
         QSignalSpy spy(tab, &SchemaTab::loaded);
         QVERIFY(spy.wait());
+    }
+
+    static SchemaTab *loaded(MainWindow &window)
+    {
+        auto *tab = static_cast<SchemaTab *>(window.tabs()->currentWidget());
+        QSignalSpy spy(tab, &SchemaTab::loaded);
+        return !tab->isLoading() || spy.wait() ? tab : nullptr;
+    }
+
+    void jsonNeedsASchema()
+    {
+        TestFiles files;
+        files.proto("a.proto", "message A {}").proto("none.proto", "enum E { Z = 0; }");
+        MainWindow window;
+        QAction *open = action(window, QKeySequence(Qt::CTRL | Qt::Key_J));
+        QAction *paste = action(window, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_V));
+        QVERIFY(open && paste);
+        QVERIFY(!open->isEnabled() && !paste->isEnabled());
+        window.openPath(files.path("none.proto"));
+        QVERIFY(loaded(window));
+        QVERIFY(!open->isEnabled() && !paste->isEnabled()); // nothing to lay it over
+        window.openPath(files.path("a.proto"));
+        QVERIFY(!open->isEnabled()); // not yet
+        QVERIFY(loaded(window));
+        QVERIFY(open->isEnabled() && paste->isEnabled());
+        window.tabs()->setCurrentIndex(0);
+        QVERIFY(!open->isEnabled() && !paste->isEnabled());
+    }
+
+    void closeGoesFromTheInsideOut()
+    {
+        TestFiles files;
+        files.proto("a.proto", "message A { int32 i = 1; }");
+        MainWindow window;
+        window.show();
+        window.openPath(files.path("a.proto"));
+        SchemaTab *tab = loaded(window);
+        QVERIFY(tab);
+        QGuiApplication::clipboard()->setText(QStringLiteral("{\"i\": 1}"));
+        action(window, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_V))->trigger();
+        action(window, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_V))->trigger();
+        QVERIFY(tab->currentJson());
+        QCOMPARE(tab->currentJson()->title(), QStringLiteral("A ← pasted 2"));
+        QAction *close = action(window, QKeySequence(Qt::CTRL | Qt::Key_W));
+        close->trigger();
+        QCOMPARE(tab->currentJson()->title(), QStringLiteral("A ← pasted"));
+        close->trigger();
+        QVERIFY(!tab->currentJson());
+        QCOMPARE(window.tabs()->count(), 1);
+        close->trigger();
+        QCOMPARE(window.tabs()->count(), 0);
+    }
+
+    void openingAListOfPaths()
+    {
+        TestFiles files;
+        files.proto("one/a.proto", "message A { int32 i = 1; }").proto("two/b.proto", "message B { int32 j = 1; } message C { int32 i = 1; }");
+        files.add("a.json", "{\"i\": 1}").add("b.JSONL", "{\"j\": 1}\n{\"j\": 2}\n").add("odd.json/c.proto", "syntax = \"proto3\"; message Odd {}");
+        MainWindow window;
+        window.show();
+        QCOMPARE(window.openAll({files.path("one"), files.path("a.json"), files.path("two"), files.path("b.JSONL"), files.path("a.json")}), QString());
+        QCOMPARE(window.tabs()->count(), 2);
+        const auto titles = [&](int tab) {
+            auto *views = window.tabs()->widget(tab)->findChild<QTabWidget *>(QStringLiteral("views"));
+            QStringList result;
+            for (int i = 0; i < views->count(); ++i)
+                result << views->tabText(i);
+            return result;
+        };
+        QTRY_COMPARE(titles(0), QStringList({"Schema", "A ← a.json"}));
+        QTRY_COMPARE(titles(1), QStringList({"Schema", "B ← b.JSONL", "C ← a.json"}));
+        // A folder can be called anything.
+        QCOMPARE(window.openAll({files.path("odd.json")}), QString());
+        QCOMPARE(window.tabs()->count(), 3);
+    }
+
+    void openingWithAMessage()
+    {
+        TestFiles files;
+        files.proto("b.proto", "package p; message B { int32 i = 1; } message C { int32 i = 1; }").add("a.json", "{\"i\": 1}");
+        MainWindow window;
+        QCOMPARE(window.openAll({files.path("b.proto"), files.path("a.json")}, QStringLiteral("C")), QString());
+        SchemaTab *tab = loaded(window);
+        QCOMPARE(tab->currentJson()->message()->fullName, QStringLiteral("p.C"));
+    }
+
+    void jsonFirstIsTurnedDown()
+    {
+        TestFiles files;
+        files.proto("a.proto", "message A {}").add("a.json", "{}");
+        MainWindow window;
+        QCOMPARE(window.openAll({QStringLiteral("a.json"), files.path("a.proto")}),
+                 QStringLiteral("a.json is JSON, and needs a schema before it."));
+        QCOMPARE(window.tabs()->count(), 0);
     }
 };
 

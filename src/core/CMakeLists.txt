@@ -1,9 +1,21 @@
 add_library(protoexplorer_core STATIC
+    Json.cpp
+    Json.h
+    JsonMatch.cpp
+    JsonMatch.h
+    JsonModel.cpp
+    JsonModel.h
+    JsonTree.cpp
+    JsonTree.h
+    JsonValues.cpp
+    JsonValues.h
     ProtoParser.cpp
     ProtoParser.h
     Schema.h
     SchemaGraph.cpp
     SchemaGraph.h
+    SchemaIndex.cpp
+    SchemaIndex.h
     SchemaLoader.cpp
     SchemaLoader.h
     SchemaModel.cpp

@@ -25,13 +25,13 @@
 #include <vector>
 
 QT_BEGIN_NAMESPACE
-class QLabel;
 class QPlainTextEdit;
 QT_END_NAMESPACE
 
 namespace protoexplorer {
 
 class ProtoHighlighter;
+class WhereLabel;
 
 // Declarations as they are written, one above the other, each under where it is from.
 class SourceView : public QWidget
@@ -46,23 +46,19 @@ public:
     void clear();
 
 protected:
-    bool eventFilter(QObject *watched, QEvent *event) override;
     void changeEvent(QEvent *event) override;
 
 private:
     struct Pane
     {
         QWidget *box = nullptr;
-        QLabel *header = nullptr;
-        QString where; // the header in full
+        WhereLabel *header = nullptr;
         QPlainTextEdit *text = nullptr;
         ProtoHighlighter *highlighter = nullptr;
     };
 
     Pane makePane(int number);
     void fill(Pane &pane, const Decl &decl);
-    // Too long to show whole, a path keeps its end: the file and the lines.
-    static void elideHeader(const Pane &pane);
     void applyFont();
     void applyPalette();
     // Make the first pane just tall enough, when there is a second to leave room for.

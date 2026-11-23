@@ -66,6 +66,16 @@ QColor mutedColor(const QPalette &palette)
     return mix(palette.color(QPalette::WindowText), palette.color(QPalette::Window), 0.35F);
 }
 
+QColor dimColor(const QPalette &palette)
+{
+    return mix(palette.color(QPalette::Text), palette.color(QPalette::Base), 0.45F);
+}
+
+QColor markColor(const QPalette &palette)
+{
+    return mix(palette.color(QPalette::Base), palette.color(QPalette::Highlight), 0.22F);
+}
+
 QColor syntaxColor(const QPalette &palette, SyntaxRole role)
 {
     const bool dark = isDarkPalette(palette);

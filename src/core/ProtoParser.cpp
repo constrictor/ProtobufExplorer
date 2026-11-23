@@ -19,6 +19,7 @@
 // The one file that sees protobuf's headers, and it sees them before Qt's: the two
 // disagree about words like `signals` and `emit`.
 #include <absl/log/globals.h>
+#include <absl/strings/escaping.h>
 #include <google/protobuf/compiler/parser.h>
 #include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/io/tokenizer.h>
@@ -27,6 +28,7 @@
 #include "ProtoParser.h"
 
 #include <QCoreApplication>
+#include <QRegularExpression>
 
 #include <algorithm>
 #include <map>
@@ -115,10 +117,13 @@ QByteArray withoutSyntaxLine(const SourceText &text)
     return bytes;
 }
 
-QString scalarName(pb::FieldDescriptorProto::Type type)
+// Nothing for a field of a message or an enum, which go by name.
+QString scalarName(const pb::FieldDescriptorProto &field)
 {
     using F = pb::FieldDescriptorProto;
-    switch (type) {
+    if (!field.type_name().empty())
+        return {}; // and the type can be unset, which reads as a double
+    switch (field.type()) {
     case F::TYPE_DOUBLE:   return QStringLiteral("double");
     case F::TYPE_FLOAT:    return QStringLiteral("float");
     case F::TYPE_INT64:    return QStringLiteral("int64");
@@ -136,6 +141,44 @@ QString scalarName(pb::FieldDescriptorProto::Type type)
     case F::TYPE_SINT64:   return QStringLiteral("sint64");
     default:               return QString();
     }
+}
+
+// What protobuf makes of a field's name for JSON.
+QString toJsonName(const std::string &name)
+{
+    QString result;
+    bool capital = false;
+    for (const QChar c : toQString(name)) {
+        if (c == u'_') {
+            capital = true;
+            continue;
+        }
+        result += capital && c >= u'a' && c <= u'z' ? QChar(c.unicode() - u'a' + u'A') : c;
+        capital = false;
+    }
+    return result;
+}
+
+// What these options set a feature to, if they do: in a statement of its own, or among
+// others in braces.
+QString feature(const char *name, const pb::RepeatedPtrField<pb::UninterpretedOption> &options)
+{
+    for (const auto &option : options) {
+        if (option.name_size() == 0 || option.name(0).is_extension()
+            || option.name(0).name_part() != "features") {
+            continue;
+        }
+        if (option.name_size() == 2 && option.name(1).name_part() == name)
+            return toQString(option.identifier_value());
+        if (option.name_size() == 1) {
+            const QRegularExpression inside(
+                QStringLiteral("\\b%1\\s*:\\s*(\\w+)").arg(QLatin1StringView(name)));
+            const auto match = inside.match(toQString(option.aggregate_value()));
+            if (match.hasMatch())
+                return match.captured(1);
+        }
+    }
+    return {};
 }
 
 // Turns one parsed file into declarations.
@@ -190,10 +233,15 @@ private:
                                     const pb::RepeatedPtrField<pb::DescriptorProto> &siblings,
                                     const Path &path, const QString &scope,
                                     const Decl *parent) const;
+    std::unique_ptr<FieldInfo> makeFieldInfo(const pb::FieldDescriptorProto &proto,
+                                             const Decl *parent) const;
 
     SourceFile &m_file;
     const pb::FileDescriptorProto &m_proto;
     std::map<Path, Span> m_spans;
+    // What the file says of fields and enums that do not say themselves.
+    bool m_tracksPresence = true;
+    bool m_closedEnums = false;
 };
 
 void Builder::build()
@@ -203,6 +251,12 @@ void Builder::build()
         m_spans.try_emplace(Path(location.path().begin(), location.path().end()),
                             toSpan(location));
     }
+
+    const auto &options = m_proto.options().uninterpreted_option();
+    const bool editions = m_proto.syntax() == "editions";
+    const bool proto3 = m_proto.syntax() == "proto3";
+    m_tracksPresence = !proto3 && feature("field_presence", options) != u"IMPLICIT";
+    m_closedEnums = editions ? feature("enum_type", options) == u"CLOSED" : !proto3;
 
     m_file.package = toQString(m_proto.package());
     for (int i = 0; i < m_proto.dependency_size(); ++i) {
@@ -351,6 +405,8 @@ void Builder::addEnum(const pb::EnumDescriptorProto &proto, const Path &path,
         span = withVisibility(span);
     auto decl = make(DeclKind::Enum, proto.name(), scope, span, parent);
     decl->signature = QStringLiteral("enum");
+    const QString type = feature("enum_type", proto.options().uninterpreted_option());
+    decl->closed = type.isEmpty() ? m_closedEnums : type == u"CLOSED";
     for (int i = 0; i < proto.value_size(); ++i) {
         const auto &value = proto.value(i);
         if (value.name().empty())
@@ -384,6 +440,9 @@ void Builder::addService(const pb::ServiceDescriptorProto &proto, const Path &pa
         made->signature = QStringLiteral("rpc (%1) → %2")
                               .arg(side(method.input_type(), method.client_streaming()),
                                    side(method.output_type(), method.server_streaming()));
+        made->method = std::make_unique<MethodInfo>();
+        made->method->request = toQString(method.input_type());
+        made->method->response = toQString(method.output_type());
         service->members.push_back(std::move(made));
     }
     into.push_back(std::move(service));
@@ -439,9 +498,12 @@ std::unique_ptr<Decl> Builder::makeField(
     auto field = make(DeclKind::Field, proto.name(), scope, spanAt(path), parent);
     field->number = proto.number();
     field->hasNumber = proto.has_number();
+    field->field = makeFieldInfo(proto, parent);
+    if (parent && parent->kind == DeclKind::Extend)
+        field->field->jsonName = u'[' + field->fullName + u']';
 
     const auto typeOf = [](const F &f) {
-        return f.type_name().empty() ? scalarName(f.type()) : toQString(f.type_name());
+        return f.type_name().empty() ? scalarName(f) : toQString(f.type_name());
     };
 
     if (!proto.type_name().empty()) {
@@ -453,6 +515,9 @@ std::unique_ptr<Decl> Builder::makeField(
             field->signature = QStringLiteral("map<%1, %2>")
                                    .arg(typeOf(entry.field(0)), typeOf(entry.field(1)));
             field->typeName = toQString(entry.field(1).type_name());
+            field->field->mapKey = scalarName(entry.field(0));
+            field->field->scalar = scalarName(entry.field(1));
+            field->field->repeated = false;
             return field;
         }
     }
@@ -469,6 +534,34 @@ std::unique_ptr<Decl> Builder::makeField(
         field->signature.prepend(word);
     }
     return field;
+}
+
+std::unique_ptr<FieldInfo> Builder::makeFieldInfo(const pb::FieldDescriptorProto &proto,
+                                                  const Decl *parent) const
+{
+    using F = pb::FieldDescriptorProto;
+    auto info = std::make_unique<FieldInfo>();
+    info->scalar = scalarName(proto);
+    info->repeated = proto.label() == F::LABEL_REPEATED;
+    info->jsonName = proto.has_json_name() ? toQString(proto.json_name()) : toJsonName(proto.name());
+
+    if (proto.has_default_value()) {
+        info->hasDefault = true;
+        std::string value = proto.default_value();
+        if (proto.type() == F::TYPE_BYTES)
+            absl::CUnescape(proto.default_value(), &value);
+        info->defaultValue = QByteArray::fromStdString(value);
+    }
+
+    if (info->repeated)
+        return info;
+    const QString presence = feature("field_presence", proto.options().uninterpreted_option());
+    info->required = proto.label() == F::LABEL_REQUIRED || presence == u"LEGACY_REQUIRED";
+    // A field that holds a message does as well, which is not known until it is found.
+    info->tracksPresence = (parent && parent->kind != DeclKind::Message) // a oneof, an extension
+        || proto.proto3_optional() || info->required
+        || (presence.isEmpty() ? m_tracksPresence : presence != u"IMPLICIT");
+    return info;
 }
 
 } // namespace
