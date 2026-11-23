@@ -1,0 +1,92 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu:
+    name: Ubuntu ${{ matrix.release }}
+    runs-on: ubuntu-${{ matrix.release }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest Qt that is supported, and the newest there is.
+        release: ['24.04', '26.04']
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the toolchain and Qt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build qt6-base-dev libgl1-mesa-dev \
+            file desktop-file-utils
+
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package
+        run: |
+          desktop-file-validate packaging/linux/protobufexplorer.desktop
+          cd build && cpack
+
+      # Where nothing of this build is installed, so that what it depends on is all it needs.
+      - name: Install the package and start it
+        run: |
+          docker run --rm --init -v "$PWD/build:/build:ro" ubuntu:${{ matrix.release }} bash -exc '
+            apt-get update
+            apt-get install -y --no-install-recommends xvfb xauth /build/*.deb
+            xvfb-run protobufexplorer --version'
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: build/*.deb
+          archive: false
+          if-no-files-found: error
+
+  appimage:
+    name: AppImage
+    # The oldest release: it runs on this one and on newer ones.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the toolchain and Qt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build qt6-base-dev libgl1-mesa-dev file
+
+      - name: Build
+        run: packaging/linux/build-appimage.sh
+
+      # With the libraries that any desktop has, and no others.
+      - name: Start it where there is no Qt
+        run: |
+          for release in 24.04 26.04; do
+            docker run --rm --init -v "$PWD/build-appimage:/build:ro" -e APPIMAGE_EXTRACT_AND_RUN=1 \
+              ubuntu:$release bash -exc '
+                apt-get update
+                apt-get install -y --no-install-recommends xvfb xauth \
+                  libegl1 libfontconfig1 libgl1 libharfbuzz0b libsm6 libx11-xcb1
+                xvfb-run /build/protobufexplorer-*.AppImage --version'
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: build-appimage/*.AppImage
+          archive: false
+          if-no-files-found: error

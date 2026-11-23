@@ -22,3 +22,9 @@ protoexplorer_test(jsontree protoexplorer_core)
 protoexplorer_test(jsonoracle protoexplorer_core protobuf::libprotobuf)
 target_compile_definitions(tst_jsonoracle PRIVATE QT_NO_KEYWORDS)
 protoexplorer_test(jsonview protoexplorer_ui)
+
+string(REPLACE . "\\." version_pattern ${PROJECT_VERSION})
+add_test(NAME version COMMAND protobufexplorer --version)
+set_tests_properties(version PROPERTIES
+    ENVIRONMENT QT_QPA_PLATFORM=offscreen
+    PASS_REGULAR_EXPRESSION "protobufexplorer ${version_pattern}\n")

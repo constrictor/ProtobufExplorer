@@ -22,12 +22,14 @@
 #include "TestFiles.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QClipboard>
-#include <QGuiApplication>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QSignalSpy>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QTimer>
 
 using namespace protoexplorer;
 
@@ -235,6 +237,25 @@ private slots:
         QCOMPARE(window.openAll({QStringLiteral("a.json"), files.path("a.proto")}),
                  QStringLiteral("a.json is JSON, and needs a schema before it."));
         QCOMPARE(window.tabs()->count(), 0);
+    }
+
+    void aboutSaysWhichVersion()
+    {
+        QCoreApplication::setApplicationVersion(QStringLiteral("1.2.3"));
+        MainWindow window;
+        window.show();
+        auto *about = window.findChild<QAction *>(QStringLiteral("about"));
+        QVERIFY(about);
+        QString text;
+        QTimer::singleShot(0, &window, [&] {
+            if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
+                text = box->text();
+                box->close();
+            }
+        });
+        about->trigger();
+        QVERIFY(text.startsWith(QStringLiteral("Protobuf Explorer 1.2.3\n")));
+        QVERIFY(text.contains(QStringLiteral("GPL-3.0-or-later")));
     }
 };
 

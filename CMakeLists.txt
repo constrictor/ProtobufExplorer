@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.28)
-project(protobufexplorer VERSION 0.1.0 LANGUAGES CXX)
+project(protobufexplorer
+    VERSION 0.1.0
+    DESCRIPTION "visual explorer for Protocol Buffers schemas"
+    HOMEPAGE_URL https://github.com/constrictor/ProtobufExplorer
+    LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,3 +33,7 @@ enable_testing()
 
 add_subdirectory(src)
 add_subdirectory(tests)
+
+if(LINUX)
+    include(packaging/linux/deb.cmake)
+endif()

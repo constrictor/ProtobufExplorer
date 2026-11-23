@@ -21,11 +21,13 @@
 #include "SchemaTab.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QLabel>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -100,6 +102,14 @@ void MainWindow::makeActions()
         if (SchemaTab *tab = currentTab())
             tab->find(false);
     });
+
+    QMenu *help = menuBar()->addMenu(tr("&Help"));
+    QAction *about = add(help, tr("&About Protobuf Explorer"), {}, [this] { showAbout(); });
+    about->setObjectName(QStringLiteral("about"));
+    about->setMenuRole(QAction::AboutRole);
+    // The AppImage carries Qt, so it has to be able to name it.
+    QAction *aboutQt = add(help, tr("About &Qt"), {}, [] { QApplication::aboutQt(); });
+    aboutQt->setMenuRole(QAction::AboutQtRole);
 }
 
 QWidget *MainWindow::makeWelcome()
@@ -211,6 +221,21 @@ void MainWindow::closeTab(int index)
     m_tabs->removeTab(index);
     tab->deleteLater();
     updateState();
+}
+
+void MainWindow::showAbout()
+{
+    QMessageBox box(this);
+    box.setWindowTitle(tr("About Protobuf Explorer"));
+    box.setTextFormat(Qt::PlainText);
+    box.setText(tr("Protobuf Explorer %1\n"
+                   "A visual explorer for Protocol Buffers schemas.\n\n"
+                   "License: GPL-3.0-or-later\n"
+                   "Free software with NO WARRANTY. See the LICENSE file shipped with it.")
+                    .arg(QCoreApplication::applicationVersion()));
+    // To be copied into a bug report.
+    box.setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+    box.exec();
 }
 
 SchemaTab *MainWindow::currentTab() const

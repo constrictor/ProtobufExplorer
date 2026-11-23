@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Protobuf Explorer
+GenericName=Schema Viewer
+Comment=Explore Protocol Buffers schemas, and JSON laid over them
+Exec=protobufexplorer %F
+Icon=protobufexplorer
+Terminal=false
+Categories=Development;
+Keywords=protobuf;proto;schema;grpc;json;
+StartupWMClass=protobufexplorer

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <rect width="256" height="256" rx="48" fill="#1e2733"/>
+  <!-- a message, and the fields that hang from it -->
+  <g fill="none" stroke="#5b7188" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M72 84 V196 H112"/>
+    <path d="M72 140 H112"/>
+  </g>
+  <rect x="44" y="44" width="136" height="40" rx="12" fill="#4fc08d"/>
+  <rect x="112" y="120" width="100" height="40" rx="12" fill="#8aa0b8"/>
+  <rect x="112" y="176" width="100" height="40" rx="12" fill="#f0b429"/>
+</svg>

@@ -55,6 +55,7 @@ private:
     void closeTab(int index);
     SchemaTab *currentTab() const;
     void updateState();
+    void showAbout();
     // Where the last thing opened was.
     QString startFolder() const;
 
