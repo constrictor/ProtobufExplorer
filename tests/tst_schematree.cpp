@@ -123,7 +123,26 @@ private slots:
             .proto("c.proto", "package p; message Twice {}");
         SchemaTree tree(files.load());
         QCOMPARE(labels(tree.roots()),
-                 QStringList({"Outer", "Outer.Inner", "p.Same", "Twice (a.proto:2)", "q.Same", "Twice (c.proto:2)"}));
+                 QStringList({"Outer", "Outer.Inner", "p.Same", "q.Same", "Twice (a.proto:2)", "Twice (c.proto:2)"}));
+    }
+
+    void rootsAreInOrderOfName()
+    {
+        SchemaTree tree(schemaOf("message zeta { Item i = 1; } service Svc {} message Item {} enum Alpha { A = 0; }\n"
+                                 "message beta {} message Beta {} message Zeta {}"));
+        QCOMPARE(labels(tree.roots()), QStringList({"Alpha", "Beta", "beta", "Svc", "Zeta", "zeta"}));
+        for (size_t i = 0; i < tree.roots().size(); ++i)
+            QCOMPARE(tree.roots()[i]->row, int(i));
+        // What is inside keeps the order it was written in.
+        QCOMPARE(labels(tree.children(*at(tree, "zeta"))), QStringList({"i"}));
+        QCOMPARE(found(tree), QStringList({"Beta", "beta", "Zeta", "zeta", "zeta/i"}));
+    }
+
+    void twinsAreInOrderOfLine()
+    {
+        // Not a.proto:11 before a.proto:3, as their whole labels would sort.
+        SchemaTree tree(schemaOf("\nmessage Twice {}\n\n\n\n\n\n\n\nmessage Twice {}"));
+        QCOMPARE(labels(tree.roots()), QStringList({"Twice (a.proto:3)", "Twice (a.proto:11)"}));
     }
 
     void sourceOfAFieldIsItsLineThenItsType()
@@ -234,10 +253,10 @@ private slots:
         QVERIFY(!model.hasChildren(self));
         QCOMPARE(model.index(2, SchemaModel::NumberColumn, a).data().toString(), QStringLiteral("3"));
         QVERIFY(!model.hasChildren(model.index(2, 0, a)));
-        const QModelIndex empty = model.index(1, 0);
+        const QModelIndex empty = model.index(2, 0);
         QCOMPARE(empty.data().toString(), QStringLiteral("Empty"));
         QVERIFY(!model.hasChildren(empty));
-        const QModelIndex e = model.index(2, 0);
+        const QModelIndex e = model.index(1, 0);
         QCOMPARE(model.index(1, SchemaModel::NumberColumn, e).data().toString(), QStringLiteral("-1"));
         QVERIFY(a.data(Qt::ToolTipRole).toString().contains(QStringLiteral("a.proto:2")));
     }

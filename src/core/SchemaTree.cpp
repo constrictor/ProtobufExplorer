@@ -54,16 +54,27 @@ SchemaTree::SchemaTree(std::shared_ptr<const Schema> schema)
         ++uses[fullKey(*decl)];
     }
 
+    // By name, so that one is found where the reader looks for it. The same name keeps the
+    // order it was written in, which is the order of the places added to tell them apart.
+    std::vector<std::pair<QString, std::unique_ptr<Node>>> named;
     for (const Decl *decl : m_schema->roots) {
         auto node = std::make_unique<Node>();
         node->decl = decl;
-        node->row = int(m_roots.size());
-        node->label = fullNames[key(*decl)].size() > 1 ? decl->fullName : localName(*decl);
+        QString name = fullNames[key(*decl)].size() > 1 ? decl->fullName : localName(*decl);
+        node->label = name;
         if (decl->kind != DeclKind::Extend && uses[fullKey(*decl)] > 1) {
             node->label += QStringLiteral(" (%1:%2)").arg(decl->file->displayPath)
                                .arg(decl->file->text.lineAt(decl->span.begin) + 1);
         }
-        m_roots.push_back(std::move(node));
+        named.emplace_back(std::move(name), std::move(node));
+    }
+    std::stable_sort(named.begin(), named.end(), [](const auto &a, const auto &b) {
+        const int order = a.first.compare(b.first, Qt::CaseInsensitive);
+        return order != 0 ? order < 0 : a.first < b.first;
+    });
+    for (auto &entry : named) {
+        entry.second->row = int(m_roots.size());
+        m_roots.push_back(std::move(entry.second));
     }
 }
 
